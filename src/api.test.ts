@@ -1,5 +1,16 @@
 import api from './api';
 
+jest.mock('ioredis', () => {
+  return {
+    Redis: jest.fn().mockImplementation(() => {
+      return {
+        set: jest.fn().mockResolvedValue('OK'),
+        get: jest.fn().mockResolvedValue('value')
+      };
+    })
+  };
+});
+
 describe('api', () => {
   it('responds with hello, world!', async () => {
     const server = api({
