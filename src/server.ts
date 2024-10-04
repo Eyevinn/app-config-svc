@@ -1,6 +1,7 @@
 import api from './api';
 
-const server = api({ title: '@eyevinn/typescript-nodejs' });
+const redisUrl = new URL(process.env.REDIS_URL || 'redis://localhost:6379');
+const server = api({ title: 'Application Configuration Service', redisUrl });
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 8000;
 

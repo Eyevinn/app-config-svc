@@ -1,5 +1,5 @@
 <h1 align="center">
-  Project Name or Logo
+  Application Configuration Service
 </h1>
 
 <div align="center">
@@ -27,15 +27,49 @@
 
 ## Requirements
 
-<!--Add any external project dependencies such as node.js version etc here -->
+Redis compatible database
 
 ## Installation / Usage
 
-<!--Add clear instructions on how to use the project here -->
+```
+% npm install
+```
+
+### Using Key/Value Store in Open Source Cloud
+
+Install OSC client if not already installed and make sure your env variable `OSC_ACCESS_TOKEN` is set to your personal access token in Open Source Cloud.
+
+```
+% export OSC_ACCESS_TOKEN=<pat>
+```
+
+Launch Valkey IO instance (Redis compatible key/value store)
+
+```
+% osc create valkey-io-valkey dev
+```
+
+Obtain the IP and port in the Open Source Cloud user interface and then start the service with
+
+```
+% REDIS_URL=redis://<ip>:<port> npm start
+```
 
 ## Development
 
-<!--Add clear instructions on how to start development of the project here -->
+### Local Redis as Docker
+
+Run local instance of Redis using Docker
+
+```
+% docker run --rm --name my-redis -p 6379:6379 -d redis
+```
+
+Then start service
+
+```
+% REDIS_URL=redis://localhost:6379 npm start
+```
 
 ## Contributing
 

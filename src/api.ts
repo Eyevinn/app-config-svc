@@ -5,6 +5,7 @@ import swaggerUI from '@fastify/swagger-ui';
 import { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import { Static, Type } from '@sinclair/typebox';
 import { FastifyPluginCallback } from 'fastify';
+import apiConfig from './api_config';
 
 const HelloWorld = Type.String({
   description: 'The magical words!'
@@ -14,7 +15,11 @@ export interface HealthcheckOptions {
   title: string;
 }
 
-const healthcheck: FastifyPluginCallback<HealthcheckOptions> = (fastify, opts, next) => {
+const healthcheck: FastifyPluginCallback<HealthcheckOptions> = (
+  fastify,
+  opts,
+  next
+) => {
   fastify.get<{ Reply: Static<typeof HelloWorld> }>(
     '/',
     {
@@ -34,6 +39,7 @@ const healthcheck: FastifyPluginCallback<HealthcheckOptions> = (fastify, opts, n
 
 export interface ApiOptions {
   title: string;
+  redisUrl: URL;
 }
 
 export default (opts: ApiOptions) => {
@@ -55,11 +61,12 @@ export default (opts: ApiOptions) => {
     }
   });
   api.register(swaggerUI, {
-    routePrefix: '/docs'
+    routePrefix: '/api/docs'
   });
 
-  api.register(healthcheck, { title: opts.title });
+  api.register(healthcheck, { prefix: '/api', title: opts.title });
   // register other API routes here
 
+  api.register(apiConfig, { prefix: '/api/v1', redisUrl: opts.redisUrl });
   return api;
-}
+};
