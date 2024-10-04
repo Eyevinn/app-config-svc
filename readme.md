@@ -55,6 +55,14 @@ Obtain the IP and port in the Open Source Cloud user interface and then start th
 % REDIS_URL=redis://<ip>:<port> npm start
 ```
 
+### Service API
+
+Once service is up and running you have the Swagger docs at `http://localhost:8000/api/docs`
+
+### Frontend
+
+Configuration frontend is available at `http://localhost:8000/`
+
 ## Development
 
 ### Local Redis as Docker

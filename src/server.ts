@@ -1,7 +1,14 @@
+import fastifyStatic from '@fastify/static';
+import path from 'path';
 import api from './api';
 
 const redisUrl = new URL(process.env.REDIS_URL || 'redis://localhost:6379');
 const server = api({ title: 'Application Configuration Service', redisUrl });
+
+server.register(fastifyStatic, {
+  root: path.join(__dirname, '../out'),
+  prefix: '/'
+});
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 8000;
 

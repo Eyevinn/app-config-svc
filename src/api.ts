@@ -5,6 +5,7 @@ import swaggerUI from '@fastify/swagger-ui';
 import { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import { Static, Type } from '@sinclair/typebox';
 import { FastifyPluginCallback } from 'fastify';
+
 import apiConfig from './api_config';
 
 const HelloWorld = Type.String({
@@ -44,7 +45,8 @@ export interface ApiOptions {
 
 export default (opts: ApiOptions) => {
   const api = fastify({
-    ignoreTrailingSlash: true
+    ignoreTrailingSlash: true,
+    logger: true
   }).withTypeProvider<TypeBoxTypeProvider>();
 
   // register the cors plugin, configure it for better security
@@ -68,5 +70,6 @@ export default (opts: ApiOptions) => {
   // register other API routes here
 
   api.register(apiConfig, { prefix: '/api/v1', redisUrl: opts.redisUrl });
+
   return api;
 };
