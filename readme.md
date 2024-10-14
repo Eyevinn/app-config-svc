@@ -79,6 +79,20 @@ Then start service
 % REDIS_URL=redis://localhost:6379 npm start
 ```
 
+Frontend in development mode on http://localhost:3000
+
+```
+% npm run dev:app
+```
+
+Build app
+
+```
+% npm run build:app
+```
+
+Output is placed in folder `out/` that is served by the API server.
+
 ## Contributing
 
 See [CONTRIBUTING](CONTRIBUTING.md)

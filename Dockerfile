@@ -12,4 +12,5 @@ COPY --chown=node:node ["src", "./src"]
 # Delete prepare script to avoid errors from husky
 RUN npm pkg delete scripts.prepare \
     && npm ci --omit=dev
+RUN npm run build:app
 CMD [ "npm", "run", "start" ]
