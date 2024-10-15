@@ -55,13 +55,44 @@ Obtain the IP and port in the Open Source Cloud user interface and then start th
 % REDIS_URL=redis://<ip>:<port> npm start
 ```
 
-### Service API
+### Application Configuration Service API
 
 Once service is up and running you have the Swagger docs at `http://localhost:8000/api/docs`
 
 ### Frontend
 
 Configuration frontend is available at `http://localhost:8000/`
+
+### Read configuration values
+
+For an application to read configuration with key `foo`, example in Javascript:
+
+```javascript
+const response = await fetch('http://localhost:8000/api/v1/config/foo', {
+  method: 'GET',
+  headers: {
+    Accept: 'text/plain'
+  }
+});
+if (response.ok) {
+  const value = await response.text();
+  // value is a string
+}
+```
+
+Example when application accepts JSON:
+
+```javascript
+const response = await fetch('http://localhost:8000/api/v1/config/foo', {
+  method: 'GET',
+  headers: {
+    Accept: 'application/json'
+  }
+});
+if (response.ok) {
+  const { key, value } = await response.json();
+}
+```
 
 ## Development
 
