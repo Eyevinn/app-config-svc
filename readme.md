@@ -3,19 +3,13 @@
 </h1>
 
 <div align="center">
-  project name - quick salespitch why this is awesome. 
+  Provide applications with configuration values in a performant way!
   <br />
-  <br />
-  :book: <b><a href="https://eyevinn.github.io/{{repo-name}}/">Read the documentation (github pages)</a></b> :eyes:
   <br />
 </div>
 
 <div align="center">
 <br />
-
-[![npm](https://img.shields.io/npm/v/@eyevinn/{{repo-name}}?style=flat-square)](https://www.npmjs.com/package/@eyevinn/{{repo-name}})
-[![github release](https://img.shields.io/github/v/release/Eyevinn/{{repo-name}}?style=flat-square)](https://github.com/Eyevinn/{{repo-name}}/releases)
-[![license](https://img.shields.io/github/license/eyevinn/{{repo-name}}.svg?style=flat-square)](LICENSE)
 
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-ff69b4.svg?style=flat-square)](https://github.com/eyevinn/{{repo-name}}/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
 [![made with hearth by Eyevinn](https://img.shields.io/badge/made%20with%20%E2%99%A5%20by-Eyevinn-59cbe8.svg?style=flat-square)](https://github.com/eyevinn)
@@ -23,7 +17,7 @@
 
 </div>
 
-<!-- Add a description of the project here -->
+Backed with a Redis (or Redis compatible) key/value store this service lets you manage application configuration variables and serve them to the clients. Cache control headers provided by default and ready to be placed behind a CDN for delivery to many user applications at the same time.
 
 ## Requirements
 
