@@ -41,12 +41,13 @@ const healthcheck: FastifyPluginCallback<HealthcheckOptions> = (
 export interface ApiOptions {
   title: string;
   redisUrl: URL;
+  defaultCacheAge?: number;
 }
 
 export default (opts: ApiOptions) => {
   const api = fastify({
     ignoreTrailingSlash: true,
-    logger: true
+    logger: process.env.DEBUG ? true : false
   }).withTypeProvider<TypeBoxTypeProvider>();
 
   // register the cors plugin, configure it for better security
@@ -57,7 +58,7 @@ export default (opts: ApiOptions) => {
     swagger: {
       info: {
         title: opts.title,
-        description: 'hello',
+        description: 'Manage and serve application configuration variables',
         version: 'v1'
       }
     }
@@ -69,7 +70,11 @@ export default (opts: ApiOptions) => {
   api.register(healthcheck, { prefix: '/api', title: opts.title });
   // register other API routes here
 
-  api.register(apiConfig, { prefix: '/api/v1', redisUrl: opts.redisUrl });
-
+  api.register(apiConfig, {
+    prefix: '/api/v1',
+    redisUrl: opts.redisUrl,
+    defaultCacheAge:
+      opts.defaultCacheAge !== undefined ? opts.defaultCacheAge : 60
+  });
   return api;
 };

@@ -3,7 +3,14 @@ import path from 'path';
 import api from './api';
 
 const redisUrl = new URL(process.env.REDIS_URL || 'redis://localhost:6379');
-const server = api({ title: 'Application Configuration Service', redisUrl });
+const defaultCacheAge = process.env.DEFAULT_CACHE_AGE
+  ? Number(process.env.DEFAULT_CACHE_AGE)
+  : undefined;
+const server = api({
+  title: 'Application Configuration Service API',
+  redisUrl,
+  defaultCacheAge
+});
 
 server.register(fastifyStatic, {
   root: path.join(__dirname, '../out'),
