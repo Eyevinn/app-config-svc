@@ -1,7 +1,7 @@
 {
-  "name": "@eyevinn/typescript-nodejs",
-  "version": "1.0.0",
-  "description": "The default typescript-nodejs template for eyevinn projects",
+  "name": "Application Config Service",
+  "version": "0.1.0",
+  "description": "Backend to provide application configuration",
   "scripts": {
     "test": "jest",
     "prepare": "husky install",
@@ -11,7 +11,8 @@
     "dev": "nodemon",
     "dev:app": "NODE_OPTIONS='--inspect' NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1 next dev",
     "build:app": "next build",
-    "start": "ts-node -T src/server.ts"
+    "start": "ts-node -T src/server.ts",
+    "postversion": "git push && git push --tags"
   },
   "license": "MIT",
   "engines": {
