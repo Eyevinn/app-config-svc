@@ -19,6 +19,7 @@
 
 Backed with a Redis (or Redis compatible) key/value store this service lets you manage application configuration variables and serve them to the clients. Cache control headers provided by default and ready to be placed behind a CDN for delivery to many user applications at the same time.
 
+![Screenshot](screenshot.png)
 ## Requirements
 
 Redis compatible database

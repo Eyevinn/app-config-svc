@@ -1,7 +1,6 @@
 'use client';
 
 import { ConfigObject, ConfigObjectList } from '@/api_config';
-import { ActionResponse } from '@/app/utils';
 import { useApiUrl } from '@/hooks/useApiUrl';
 import {
   Button,
@@ -15,56 +14,23 @@ import {
   TableHeader,
   TableRow
 } from '@nextui-org/react';
-import { IconCheck, IconPencil, IconTrash } from '@tabler/icons-react';
+import { IconCheck, IconPencil, IconTrash, IconX } from '@tabler/icons-react';
 import { useEffect, useMemo, useState } from 'react';
+import NewConfigObjectModal from './NewConfigObjectModal';
+import {
+  createConfigObject,
+  deleteConfigObject,
+  getConfigObjectList,
+  updateConfigObject
+} from '@/app/client';
+import { ConfirmationModal } from '@/components/modal/ConfirmationModal';
+import ClipBoardCopyButton from '@/components/button/ClipboardCopyButton';
 
 export interface ConfigObjectTableProps {
   pageSize?: number;
 }
 
 const DEFAULT_PAGE_SIZE = 20;
-
-async function getConfigObjectList({
-  apiUrl,
-  offset,
-  limit
-}: {
-  apiUrl: string;
-  offset: number;
-  limit: number;
-}): ActionResponse<ConfigObjectList> {
-  const url = new URL(`${apiUrl}/config`);
-  url.searchParams.append('offset', offset.toString());
-  url.searchParams.append('limit', limit.toString());
-  const response = await fetch(url);
-  if (!response.ok) {
-    return [undefined, 'Failed to fetch config object list'];
-  }
-  return [await response.json()];
-}
-
-async function updateConfigObject({
-  apiUrl,
-  keyId,
-  value
-}: {
-  apiUrl: string;
-  keyId: string;
-  value: string;
-}): ActionResponse<ConfigObject> {
-  const url = new URL(`${apiUrl}/config`);
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ key: keyId, value })
-  });
-  if (!response.ok) {
-    return [undefined, 'Failed to update config object'];
-  }
-  return [await response.json()];
-}
 
 export default function ConfigObjectTable({
   pageSize = DEFAULT_PAGE_SIZE
@@ -74,6 +40,7 @@ export default function ConfigObjectTable({
   const [data, setData] = useState<ConfigObjectList | undefined>(undefined);
   const [editKeyId, setEditKeyId] = useState<string | undefined>(undefined);
   const [editValue, setEditValue] = useState<string | undefined>(undefined);
+  const [isConfirmModalOpen, setConfirmModalOpen] = useState(false);
 
   const apiUrl = useApiUrl();
 
@@ -122,6 +89,44 @@ export default function ConfigObjectTable({
       });
   };
 
+  const handleCreate = (obj: ConfigObject) => {
+    if (!apiUrl) {
+      return;
+    }
+    createConfigObject({
+      apiUrl,
+      obj
+    })
+      .then(([data, error]) => {
+        if (error) {
+          console.error(error);
+          return;
+        }
+      })
+      .finally(() => {
+        updateTableContents();
+      });
+  };
+
+  const handleDelete = (keyId: string) => {
+    if (!apiUrl) {
+      return;
+    }
+    deleteConfigObject({
+      apiUrl,
+      key: keyId
+    })
+      .then(([data, error]) => {
+        if (error) {
+          console.error(error);
+          return;
+        }
+      })
+      .finally(() => {
+        updateTableContents();
+      });
+  };
+
   useEffect(() => {
     updateTableContents();
   }, [page, pageSize, apiUrl]);
@@ -134,78 +139,120 @@ export default function ConfigObjectTable({
     isLoading || data?.items.length === 0 ? 'loading' : 'idle';
 
   return (
-    <Table
-      bottomContent={
-        pages > 0 ? (
-          <div className="flex w-full justify-center">
-            <Pagination
-              isCompact
-              showControls
-              showShadow
-              color="primary"
-              page={page}
-              total={pages}
-              onChange={(page) => setPage(page)}
-            />
-          </div>
-        ) : null
-      }
-    >
-      <TableHeader>
-        <TableColumn key="configKey">KEY</TableColumn>
-        <TableColumn key="configValue">VALUE</TableColumn>
-        <TableColumn key="configActions">ACTIONS</TableColumn>
-      </TableHeader>
-      <TableBody
-        items={
-          data?.items.map((obj) => {
-            return { keyId: obj.key, value: obj.value };
-          }) ?? []
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col justify-between gap-3 items-end">
+        <NewConfigObjectModal onSave={handleCreate} />
+      </div>
+      <Table
+        bottomContent={
+          pages > 0 ? (
+            <div className="flex w-full justify-center">
+              <Pagination
+                isCompact
+                showControls
+                showShadow
+                color="primary"
+                page={page}
+                total={pages}
+                onChange={(page) => setPage(page)}
+              />
+            </div>
+          ) : null
         }
-        loadingContent={<Spinner />}
-        loadingState={loadingState}
       >
-        {(item) => (
-          <TableRow key={item.keyId}>
-            <TableCell>{item.keyId}</TableCell>
-            <TableCell>
-              {editKeyId === item.keyId ? (
-                <Input
-                  value={editValue ?? item.value}
-                  onValueChange={setEditValue}
-                />
-              ) : (
-                item.value
-              )}
-            </TableCell>
-            <TableCell>
-              {editKeyId !== item.keyId && (
-                <Button
-                  isIconOnly
-                  color="primary"
-                  size="sm"
-                  onPress={() => setEditKeyId(item.keyId)}
-                >
-                  <IconPencil />
-                </Button>
-              )}
-              {editKeyId === item.keyId && (
-                <Button
-                  isIconOnly
-                  color="primary"
-                  size="sm"
-                  onPress={() => handleSaveEdit(item.keyId)}
-                >
-                  <IconCheck />
-                </Button>
-              )}
-              <Button isIconOnly color="danger" size="sm">
-                <IconTrash />
-              </Button>
-            </TableCell>
-          </TableRow>
-        )}
-      </TableBody>
-    </Table>
+        <TableHeader>
+          <TableColumn key="configKey" align="start">
+            KEY
+          </TableColumn>
+          <TableColumn key="configValue" align="start">
+            VALUE
+          </TableColumn>
+          <TableColumn key="configActions" align="start">
+            ACTIONS
+          </TableColumn>
+        </TableHeader>
+        <TableBody
+          items={
+            data?.items.map((obj) => {
+              return { keyId: obj.key, value: obj.value };
+            }) ?? []
+          }
+          loadingContent={<Spinner />}
+          loadingState={loadingState}
+        >
+          {(item) => (
+            <TableRow key={item.keyId}>
+              <TableCell width="200">{item.keyId}</TableCell>
+              <TableCell width="400">
+                {editKeyId === item.keyId ? (
+                  <Input
+                    width="400"
+                    value={editValue ?? item.value}
+                    onValueChange={setEditValue}
+                  />
+                ) : (
+                  item.value
+                )}
+              </TableCell>
+              <TableCell width="100">
+                <div className="relative flex items-center gap-2 justify-left">
+                  {editKeyId !== item.keyId && (
+                    <Button
+                      isIconOnly
+                      color="default"
+                      size="sm"
+                      onPress={() => setEditKeyId(item.keyId)}
+                    >
+                      <IconPencil />
+                    </Button>
+                  )}
+                  {editKeyId === item.keyId && (
+                    <>
+                      <Button
+                        isIconOnly
+                        color="default"
+                        size="sm"
+                        onPress={() => handleSaveEdit(item.keyId)}
+                      >
+                        <IconCheck />
+                      </Button>
+                      <Button
+                        isIconOnly
+                        color="default"
+                        size="sm"
+                        onPress={() => {
+                          setEditValue(item.value);
+                          setEditKeyId(undefined);
+                        }}
+                      >
+                        <IconX />
+                      </Button>
+                    </>
+                  )}
+                  <ClipBoardCopyButton
+                    text={apiUrl + '/config/' + item.keyId}
+                  />
+                  <Button
+                    isIconOnly
+                    color="danger"
+                    size="sm"
+                    onPress={() => setConfirmModalOpen(true)}
+                  >
+                    <IconTrash />
+                  </Button>
+                  <ConfirmationModal
+                    isOpen={isConfirmModalOpen}
+                    setIsOpen={setConfirmModalOpen}
+                    handleConfirmClick={() => handleDelete(item.keyId)}
+                    modalContent={`Are you sure you want to delete this configuration variable?`}
+                    buttonContent="Yes, I am sure"
+                  />
+                </div>
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
+    </div>
   );
 }
