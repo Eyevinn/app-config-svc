@@ -7,8 +7,9 @@ RUN mkdir /app
 RUN chown node:node /app
 USER node
 WORKDIR /app
-COPY --chown=node:node ["package.json", "package-lock.json*", "tsconfig*.json", "./"]
-COPY --chown=node:node ["src", "./src"]
+#COPY --chown=node:node ["package.json", "package-lock.json*", "tsconfig*.json", "./"]
+#COPY --chown=node:node ["src", "./src"]
+COPY --chown=node:node . .
 # Delete prepare script to avoid errors from husky
 RUN npm pkg delete scripts.prepare \
     && npm ci --omit=dev
