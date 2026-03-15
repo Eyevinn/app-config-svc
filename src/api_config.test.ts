@@ -94,6 +94,41 @@ describe('api_config key prefix isolation', () => {
       expect(response.statusCode).toBe(404);
       expect(mockRedis.get).toHaveBeenCalledWith(KEY_PREFIX + 'nonexistent');
     });
+
+    it('falls back to bare key when prefixed key is absent and migrates in place', async () => {
+      // First call (prefixed) returns null, second call (bare) returns value
+      mockRedis.get
+        .mockResolvedValueOnce(null) // KEY_PREFIX + 'legacykey'
+        .mockResolvedValueOnce('legacyvalue'); // bare 'legacykey'
+
+      const response = await server.inject({
+        method: 'GET',
+        url: '/api/v1/config/legacykey'
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.key).toBe('legacykey');
+      expect(body.value).toBe('legacyvalue');
+
+      // Migration: prefixed key written, bare key deleted
+      expect(mockRedis.set).toHaveBeenCalledWith(
+        KEY_PREFIX + 'legacykey',
+        'legacyvalue'
+      );
+      expect(mockRedis.del).toHaveBeenCalledWith('legacykey');
+    });
+
+    it('returns 404 when neither prefixed nor bare key exists', async () => {
+      mockRedis.get.mockResolvedValue(null);
+
+      const response = await server.inject({
+        method: 'GET',
+        url: '/api/v1/config/missing'
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
   });
 
   describe('DELETE /api/v1/config/:key', () => {
@@ -121,11 +156,37 @@ describe('api_config key prefix isolation', () => {
 
       expect(response.statusCode).toBe(404);
     });
+
+    it('migrates bare key and deletes prefixed version when only bare key exists', async () => {
+      // getWithMigration: prefixed lookup returns null, bare lookup returns value
+      mockRedis.get
+        .mockResolvedValueOnce(null) // KEY_PREFIX + 'legacykey'
+        .mockResolvedValueOnce('legacyvalue'); // bare 'legacykey'
+      mockRedis.del.mockResolvedValue(1);
+
+      const response = await server.inject({
+        method: 'DELETE',
+        url: '/api/v1/config/legacykey'
+      });
+
+      expect(response.statusCode).toBe(200);
+      // Migration writes prefixed key
+      expect(mockRedis.set).toHaveBeenCalledWith(
+        KEY_PREFIX + 'legacykey',
+        'legacyvalue'
+      );
+      // Migration deletes bare key
+      expect(mockRedis.del).toHaveBeenCalledWith('legacykey');
+      // Final delete removes the (now-migrated) prefixed key
+      expect(mockRedis.del).toHaveBeenCalledWith(KEY_PREFIX + 'legacykey');
+    });
   });
 
   describe('GET /api/v1/config', () => {
     it('scans only keys matching the osc:params: prefix', async () => {
-      mockRedis.scan.mockResolvedValue(['0', [KEY_PREFIX + 'k1']]);
+      mockRedis.scan
+        .mockResolvedValueOnce(['0', [KEY_PREFIX + 'k1']]) // prefixed scan
+        .mockResolvedValueOnce(['0', [KEY_PREFIX + 'k1']]); // all-keys scan
       mockRedis.keys.mockResolvedValue([KEY_PREFIX + 'k1']);
       mockRedis.get.mockResolvedValue('v1');
 
@@ -145,7 +206,9 @@ describe('api_config key prefix isolation', () => {
     });
 
     it('strips prefix from keys returned in listing', async () => {
-      mockRedis.scan.mockResolvedValue(['0', [KEY_PREFIX + 'k1']]);
+      mockRedis.scan
+        .mockResolvedValueOnce(['0', [KEY_PREFIX + 'k1']]) // prefixed scan
+        .mockResolvedValueOnce(['0', [KEY_PREFIX + 'k1']]); // all-keys scan
       mockRedis.keys.mockResolvedValue([KEY_PREFIX + 'k1']);
       mockRedis.get.mockResolvedValue('v1');
 
@@ -159,7 +222,9 @@ describe('api_config key prefix isolation', () => {
     });
 
     it('applies match pattern with prefix prepended', async () => {
-      mockRedis.scan.mockResolvedValue(['0', []]);
+      mockRedis.scan
+        .mockResolvedValueOnce(['0', []]) // prefixed scan
+        .mockResolvedValueOnce(['0', []]); // all-keys scan
       mockRedis.keys.mockResolvedValue([]);
 
       await server.inject({
@@ -174,6 +239,33 @@ describe('api_config key prefix isolation', () => {
         'COUNT',
         20
       );
+    });
+
+    it('includes legacy bare keys in listing and migrates them', async () => {
+      // First scan: prefixed keys page (empty for this test)
+      // Second scan: all keys (returns a bare legacy key)
+      mockRedis.scan
+        .mockResolvedValueOnce(['0', []]) // prefixed MATCH scan
+        .mockResolvedValueOnce(['0', ['legacykey']]); // all-keys scan
+      mockRedis.keys.mockResolvedValue([KEY_PREFIX + 'legacykey']); // after migration
+      mockRedis.get.mockResolvedValue('legacyvalue');
+
+      const response = await server.inject({
+        method: 'GET',
+        url: '/api/v1/config'
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.items).toEqual(
+        expect.arrayContaining([{ key: 'legacykey', value: 'legacyvalue' }])
+      );
+      // Migrated: bare key written as prefixed and bare deleted
+      expect(mockRedis.set).toHaveBeenCalledWith(
+        KEY_PREFIX + 'legacykey',
+        'legacyvalue'
+      );
+      expect(mockRedis.del).toHaveBeenCalledWith('legacykey');
     });
   });
 });
