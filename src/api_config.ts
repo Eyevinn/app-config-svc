@@ -5,6 +5,13 @@ import { ErrorReply, ErrorResponse, errorReply } from './api/errors';
 import { Redis } from 'ioredis';
 import { InvalidInputError, NotFoundError } from './utils/error';
 
+/**
+ * Key prefix used for all parameter store entries in Valkey/Redis.
+ * This prevents namespace collisions when an app shares the same Valkey
+ * instance for its own data storage (sorted sets, hashes, etc.).
+ */
+export const KEY_PREFIX = 'osc:params:';
+
 export interface ApiConfigOptions {
   redisUrl: URL;
   defaultCacheAge: number;
@@ -61,7 +68,10 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
     },
     async (request, reply) => {
       try {
-        const res = await redis.set(request.body.key, request.body.value);
+        const res = await redis.set(
+          KEY_PREFIX + request.body.key,
+          request.body.value
+        );
         if (res !== 'OK') {
           throw new InvalidInputError({ reason: 'Failed to set value' });
         }
@@ -91,19 +101,23 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
       try {
         const limit = request.query.limit || 20;
         const cursor = request.query.offset || 0;
+        const matchPattern = request.query.match
+          ? KEY_PREFIX + request.query.match
+          : KEY_PREFIX + '*';
         const [newCursor, keys] = await redis.scan(
           cursor,
           'MATCH',
-          request.query.match || '*',
+          matchPattern,
           'COUNT',
           limit
         );
-        const total = await redis.dbsize();
+        const prefixedKeys = await redis.keys(KEY_PREFIX + '*');
+        const total = prefixedKeys.length;
         const items = [];
         for (const key of keys) {
           const value = await redis.get(key);
           if (value) {
-            items.push({ key, value });
+            items.push({ key: key.slice(KEY_PREFIX.length), value });
           }
         }
         reply.code(200).send({
@@ -145,7 +159,7 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
     },
     async (request, reply) => {
       try {
-        const value = await redis.get(request.params.key);
+        const value = await redis.get(KEY_PREFIX + request.params.key);
         if (!value) {
           throw new NotFoundError({ id: request.params.key });
         }
@@ -176,11 +190,11 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
     },
     async (request, reply) => {
       try {
-        const value = await redis.get(request.params.key);
+        const value = await redis.get(KEY_PREFIX + request.params.key);
         if (!value) {
           throw new NotFoundError({ id: request.params.key });
         }
-        await redis.del(request.params.key);
+        await redis.del(KEY_PREFIX + request.params.key);
         reply.code(200).send({ message: 'Deleted' });
       } catch (error) {
         errorReply(reply as ErrorReply, error);

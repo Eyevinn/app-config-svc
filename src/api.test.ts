@@ -5,7 +5,10 @@ jest.mock('ioredis', () => {
     Redis: jest.fn().mockImplementation(() => {
       return {
         set: jest.fn().mockResolvedValue('OK'),
-        get: jest.fn().mockResolvedValue('value')
+        get: jest.fn().mockResolvedValue('value'),
+        del: jest.fn().mockResolvedValue(1),
+        scan: jest.fn().mockResolvedValue(['0', []]),
+        keys: jest.fn().mockResolvedValue([])
       };
     })
   };
