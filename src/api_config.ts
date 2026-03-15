@@ -5,6 +5,13 @@ import { ErrorReply, ErrorResponse, errorReply } from './api/errors';
 import { Redis } from 'ioredis';
 import { InvalidInputError, NotFoundError } from './utils/error';
 
+/**
+ * Key prefix used for all parameter store entries in Valkey/Redis.
+ * This prevents namespace collisions when an app shares the same Valkey
+ * instance for its own data storage (sorted sets, hashes, etc.).
+ */
+export const KEY_PREFIX = 'osc:params:';
+
 export interface ApiConfigOptions {
   redisUrl: URL;
   defaultCacheAge: number;
@@ -32,6 +39,30 @@ export const SuccessResponse = Type.Object({
   message: Type.String({ description: 'Success message' })
 });
 export type SuccessResponse = Static<typeof SuccessResponse>;
+
+/**
+ * Read a key with lazy migration support.
+ *
+ * First checks for the prefixed key. If not found, falls back to the bare
+ * (pre-migration) key. When a bare key is found, it is migrated in place:
+ * the value is written under the prefixed key and the bare key is deleted.
+ */
+export async function getWithMigration(
+  redis: Redis,
+  key: string
+): Promise<string | null> {
+  let value = await redis.get(KEY_PREFIX + key);
+  if (value === null) {
+    // Fallback: check for bare key (pre-migration data)
+    value = await redis.get(key);
+    if (value !== null) {
+      // Migrate in place: write prefixed, remove bare
+      await redis.set(KEY_PREFIX + key, value);
+      await redis.del(key);
+    }
+  }
+  return value;
+}
 
 const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
   fastify,
@@ -61,7 +92,10 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
     },
     async (request, reply) => {
       try {
-        const res = await redis.set(request.body.key, request.body.value);
+        const res = await redis.set(
+          KEY_PREFIX + request.body.key,
+          request.body.value
+        );
         if (res !== 'OK') {
           throw new InvalidInputError({ reason: 'Failed to set value' });
         }
@@ -91,21 +125,59 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
       try {
         const limit = request.query.limit || 20;
         const cursor = request.query.offset || 0;
-        const [newCursor, keys] = await redis.scan(
+        const matchPattern = request.query.match
+          ? KEY_PREFIX + request.query.match
+          : KEY_PREFIX + '*';
+
+        // Scan for prefixed keys (current format)
+        const [newCursor, prefixedPageKeys] = await redis.scan(
           cursor,
           'MATCH',
-          request.query.match || '*',
+          matchPattern,
           'COUNT',
           limit
         );
-        const total = await redis.dbsize();
-        const items = [];
-        for (const key of keys) {
-          const value = await redis.get(key);
-          if (value) {
-            items.push({ key, value });
+
+        // Scan for bare legacy keys (pre-migration format), excluding anything
+        // that already starts with the prefix
+        const [, allKeys] = await redis.scan(0, 'MATCH', '*', 'COUNT', 1000);
+        const bareKeys = allKeys.filter(
+          (k) =>
+            !k.startsWith(KEY_PREFIX) &&
+            (request.query.match
+              ? k.match(
+                  new RegExp(
+                    '^' + request.query.match.replace(/\*/g, '.*') + '$'
+                  )
+                )
+              : true)
+        );
+
+        // Migrate bare keys in place and collect their values
+        const bareItems: ConfigObject[] = [];
+        for (const bareKey of bareKeys) {
+          const value = await redis.get(bareKey);
+          if (value !== null) {
+            await redis.set(KEY_PREFIX + bareKey, value);
+            await redis.del(bareKey);
+            bareItems.push({ key: bareKey, value });
           }
         }
+
+        // Collect values for the prefixed page keys
+        const prefixedItems: ConfigObject[] = [];
+        for (const key of prefixedPageKeys) {
+          const value = await redis.get(key);
+          if (value) {
+            prefixedItems.push({ key: key.slice(KEY_PREFIX.length), value });
+          }
+        }
+
+        // Total: count all prefixed keys (post-migration) plus any remaining bare keys
+        const prefixedKeys = await redis.keys(KEY_PREFIX + '*');
+        const total = prefixedKeys.length;
+
+        const items = [...prefixedItems, ...bareItems];
         reply.code(200).send({
           offset: parseInt(newCursor),
           limit: items.length > limit ? items.length : limit,
@@ -145,7 +217,7 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
     },
     async (request, reply) => {
       try {
-        const value = await redis.get(request.params.key);
+        const value = await getWithMigration(redis, request.params.key);
         if (!value) {
           throw new NotFoundError({ id: request.params.key });
         }
@@ -176,11 +248,13 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
     },
     async (request, reply) => {
       try {
-        const value = await redis.get(request.params.key);
+        const value = await getWithMigration(redis, request.params.key);
         if (!value) {
           throw new NotFoundError({ id: request.params.key });
         }
-        await redis.del(request.params.key);
+        // At this point the key has been migrated (if it was bare), so always
+        // delete the prefixed version.
+        await redis.del(KEY_PREFIX + request.params.key);
         reply.code(200).send({ message: 'Deleted' });
       } catch (error) {
         errorReply(reply as ErrorReply, error);
