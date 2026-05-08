@@ -16,8 +16,8 @@ export const KEY_PREFIX = 'osc:params:';
 export interface ApiConfigOptions {
   redisUrl: URL;
   defaultCacheAge: number;
-  encryptionKey: string;
-  configApiKey: string;
+  encryptionKey?: string;
+  configApiKey?: string;
 }
 
 /**
@@ -114,6 +114,7 @@ function toDisplayObject(key: string, raw: string): ConfigObject {
 /**
  * Given a raw stored string, return the ConfigObject with plaintext decrypted.
  * Used for the authenticated config-to-env endpoint.
+ * Caller must ensure encryptionKey is defined before calling with a secret value.
  */
 function toPlaintextObject(
   key: string,
@@ -160,9 +161,13 @@ export async function getWithMigration(
 /**
  * Determine if the Authorization header carries a valid bearer token matching
  * the expected secret.
+ * Returns false when secret is undefined (CONFIG_API_KEY not configured).
  */
-function isBearerAuth(authHeader: string | undefined, secret: string): boolean {
-  if (!authHeader) return false;
+function isBearerAuth(
+  authHeader: string | undefined,
+  secret: string | undefined
+): boolean {
+  if (!authHeader || !secret) return false;
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
   if (!match) return false;
   return match[1] === secret;
@@ -201,6 +206,12 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
         let storedValue: string;
 
         if (secret) {
+          if (!opts.encryptionKey) {
+            return reply.code(400).send({
+              reason:
+                'Encryption not configured: PARAMETER_ENCRYPTION_KEY is required for secret parameters'
+            });
+          }
           const { encrypted, iv, tag } = encrypt(value, opts.encryptionKey);
           const envelope: SecretEnvelope = {
             value: encrypted,
@@ -275,6 +286,12 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
 
         let storedValue: string;
         if (effectiveSecret) {
+          if (!opts.encryptionKey) {
+            return reply.code(400).send({
+              reason:
+                'Encryption not configured: PARAMETER_ENCRYPTION_KEY is required for secret parameters'
+            });
+          }
           const { encrypted, iv, tag } = encrypt(value, opts.encryptionKey);
           const envelope: SecretEnvelope = {
             value: encrypted,
@@ -324,10 +341,9 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
     },
     async (request, reply) => {
       try {
-        const authenticated = isBearerAuth(
-          request.headers.authorization,
-          opts.configApiKey
-        );
+        const authenticated =
+          !!opts.encryptionKey &&
+          isBearerAuth(request.headers.authorization, opts.configApiKey);
 
         const limit = request.query.limit || 20;
         const cursor = request.query.offset || 0;
@@ -367,7 +383,7 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
             await redis.set(KEY_PREFIX + bareKey, value);
             await redis.del(bareKey);
             bareItems.push(
-              authenticated
+              authenticated && opts.encryptionKey
                 ? toPlaintextObject(bareKey, value, opts.encryptionKey)
                 : toDisplayObject(bareKey, value)
             );
@@ -381,7 +397,7 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
           if (value) {
             const itemKey = k.slice(KEY_PREFIX.length);
             prefixedItems.push(
-              authenticated
+              authenticated && opts.encryptionKey
                 ? toPlaintextObject(itemKey, value, opts.encryptionKey)
                 : toDisplayObject(itemKey, value)
             );
@@ -433,19 +449,19 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
     },
     async (request, reply) => {
       try {
-        const authenticated = isBearerAuth(
-          request.headers.authorization,
-          opts.configApiKey
-        );
+        const authenticated =
+          !!opts.encryptionKey &&
+          isBearerAuth(request.headers.authorization, opts.configApiKey);
 
         const raw = await getWithMigration(redis, request.params.key);
         if (!raw) {
           throw new NotFoundError({ id: request.params.key });
         }
 
-        const result = authenticated
-          ? toPlaintextObject(request.params.key, raw, opts.encryptionKey)
-          : toDisplayObject(request.params.key, raw);
+        const result =
+          authenticated && opts.encryptionKey
+            ? toPlaintextObject(request.params.key, raw, opts.encryptionKey)
+            : toDisplayObject(request.params.key, raw);
 
         reply
           .code(200)

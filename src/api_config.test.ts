@@ -31,6 +31,14 @@ function makeServer() {
   });
 }
 
+function makeServerNoEncryption() {
+  return api({
+    title: 'test',
+    redisUrl: new URL('redis://localhost:6379')
+    // encryptionKey and configApiKey intentionally omitted
+  });
+}
+
 describe('api_config key prefix isolation', () => {
   let server: ReturnType<typeof makeServer>;
 
@@ -503,5 +511,89 @@ describe('api_config key prefix isolation', () => {
       );
       expect(item.value).toBe('topsecret');
     });
+  });
+});
+
+describe('api_config without encryption keys (backward compatibility)', () => {
+  let server: ReturnType<typeof makeServerNoEncryption>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    server = makeServerNoEncryption();
+  });
+
+  it('starts and serves non-secret parameters without PARAMETER_ENCRYPTION_KEY', async () => {
+    mockRedis.set.mockResolvedValue('OK');
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/v1/config',
+      payload: { key: 'mykey', value: 'myvalue' }
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body);
+    expect(body.key).toBe('mykey');
+    expect(body.value).toBe('myvalue');
+  });
+
+  it('returns 400 when POST requests secret:true without PARAMETER_ENCRYPTION_KEY', async () => {
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/v1/config',
+      payload: { key: 'secretkey', value: 'topsecret', secret: true }
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = JSON.parse(response.body);
+    expect(body.reason).toMatch(/PARAMETER_ENCRYPTION_KEY/);
+  });
+
+  it('returns 400 when PUT upgrades to secret without PARAMETER_ENCRYPTION_KEY', async () => {
+    mockRedis.get.mockResolvedValue('plainvalue');
+
+    const response = await server.inject({
+      method: 'PUT',
+      url: '/api/v1/config/mykey',
+      payload: { value: 'newvalue', secret: true }
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = JSON.parse(response.body);
+    expect(body.reason).toMatch(/PARAMETER_ENCRYPTION_KEY/);
+  });
+
+  it('returns 400 when PUT re-encrypts an existing secret without PARAMETER_ENCRYPTION_KEY', async () => {
+    // Simulate a secret envelope that was stored when the key was configured
+    const envelope = JSON.stringify({
+      value: 'encryptedblob',
+      iv: 'ivblob',
+      tag: 'tagblob',
+      secret: true
+    });
+    mockRedis.get.mockResolvedValue(envelope);
+
+    const response = await server.inject({
+      method: 'PUT',
+      url: '/api/v1/config/secretkey',
+      payload: { value: 'newsecret' }
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = JSON.parse(response.body);
+    expect(body.reason).toMatch(/PARAMETER_ENCRYPTION_KEY/);
+  });
+
+  it('returns masked value for plain GET without keys configured', async () => {
+    mockRedis.get.mockResolvedValue('plainvalue');
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/config/mykey'
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body);
+    expect(body.value).toBe('plainvalue');
   });
 });

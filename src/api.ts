@@ -42,8 +42,8 @@ export interface ApiOptions {
   title: string;
   redisUrl: URL;
   defaultCacheAge?: number;
-  encryptionKey: string;
-  configApiKey: string;
+  encryptionKey?: string;
+  configApiKey?: string;
 }
 
 export default (opts: ApiOptions) => {
