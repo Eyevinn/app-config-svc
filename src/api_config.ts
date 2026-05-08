@@ -17,6 +17,7 @@ export interface ApiConfigOptions {
   redisUrl: URL;
   defaultCacheAge: number;
   encryptionKey: string;
+  configApiKey: string;
 }
 
 /**
@@ -325,7 +326,7 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
       try {
         const authenticated = isBearerAuth(
           request.headers.authorization,
-          opts.encryptionKey
+          opts.configApiKey
         );
 
         const limit = request.query.limit || 20;
@@ -434,7 +435,7 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
       try {
         const authenticated = isBearerAuth(
           request.headers.authorization,
-          opts.encryptionKey
+          opts.configApiKey
         );
 
         const raw = await getWithMigration(redis, request.params.key);

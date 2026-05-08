@@ -20,11 +20,14 @@ jest.mock('ioredis', () => {
   };
 });
 
+const TEST_CONFIG_API_KEY = 'test-api-key';
+
 function makeServer() {
   return api({
     title: 'test',
     redisUrl: new URL('redis://localhost:6379'),
-    encryptionKey: TEST_ENCRYPTION_KEY
+    encryptionKey: TEST_ENCRYPTION_KEY,
+    configApiKey: TEST_CONFIG_API_KEY
   });
 }
 
@@ -249,7 +252,7 @@ describe('api_config key prefix isolation', () => {
       const response = await server.inject({
         method: 'GET',
         url: '/api/v1/config/secretkey',
-        headers: { authorization: `Bearer ${TEST_ENCRYPTION_KEY}` }
+        headers: { authorization: `Bearer ${TEST_CONFIG_API_KEY}` }
       });
 
       expect(response.statusCode).toBe(200);
@@ -490,7 +493,7 @@ describe('api_config key prefix isolation', () => {
       const response = await server.inject({
         method: 'GET',
         url: '/api/v1/config',
-        headers: { authorization: `Bearer ${TEST_ENCRYPTION_KEY}` }
+        headers: { authorization: `Bearer ${TEST_CONFIG_API_KEY}` }
       });
 
       expect(response.statusCode).toBe(200);

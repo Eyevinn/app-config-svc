@@ -43,6 +43,7 @@ export interface ApiOptions {
   redisUrl: URL;
   defaultCacheAge?: number;
   encryptionKey: string;
+  configApiKey: string;
 }
 
 export default (opts: ApiOptions) => {
@@ -76,7 +77,8 @@ export default (opts: ApiOptions) => {
     redisUrl: opts.redisUrl,
     defaultCacheAge:
       opts.defaultCacheAge !== undefined ? opts.defaultCacheAge : 60,
-    encryptionKey: opts.encryptionKey
+    encryptionKey: opts.encryptionKey,
+    configApiKey: opts.configApiKey
   });
   return api;
 };
