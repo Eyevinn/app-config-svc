@@ -2,14 +2,21 @@ import fastifyStatic from '@fastify/static';
 import path from 'path';
 import api from './api';
 
+if (!process.env.PARAMETER_ENCRYPTION_KEY) {
+  throw new Error('PARAMETER_ENCRYPTION_KEY environment variable is required');
+}
+
 const redisUrl = new URL(process.env.REDIS_URL || 'redis://localhost:6379');
 const defaultCacheAge = process.env.DEFAULT_CACHE_AGE
   ? Number(process.env.DEFAULT_CACHE_AGE)
   : undefined;
+const encryptionKey = process.env.PARAMETER_ENCRYPTION_KEY;
+
 const server = api({
   title: 'Application Configuration Service API',
   redisUrl,
-  defaultCacheAge
+  defaultCacheAge,
+  encryptionKey
 });
 
 server.register(fastifyStatic, {
