@@ -251,7 +251,7 @@ describe('api_config key prefix isolation', () => {
       expect(body.secret).toBe(true);
     });
 
-    it('returns plaintext for secret values with valid bearer auth', async () => {
+    it('returns plaintext for secret values with valid x-config-api-key header', async () => {
       const { encrypted, iv, tag } = encrypt('topsecret', TEST_ENCRYPTION_KEY);
       mockRedis.get.mockResolvedValue(
         JSON.stringify({ value: encrypted, iv, tag, secret: true })
@@ -260,7 +260,7 @@ describe('api_config key prefix isolation', () => {
       const response = await server.inject({
         method: 'GET',
         url: '/api/v1/config/secretkey',
-        headers: { authorization: `Bearer ${TEST_CONFIG_API_KEY}` }
+        headers: { 'x-config-api-key': TEST_CONFIG_API_KEY }
       });
 
       expect(response.statusCode).toBe(200);
@@ -483,7 +483,7 @@ describe('api_config key prefix isolation', () => {
       expect(item.secret).toBe(true);
     });
 
-    it('returns plaintext in listing with valid bearer auth', async () => {
+    it('returns plaintext in listing with valid x-config-api-key header', async () => {
       const { encrypted, iv, tag } = encrypt('topsecret', TEST_ENCRYPTION_KEY);
       const envelope = JSON.stringify({
         value: encrypted,
@@ -501,7 +501,7 @@ describe('api_config key prefix isolation', () => {
       const response = await server.inject({
         method: 'GET',
         url: '/api/v1/config',
-        headers: { authorization: `Bearer ${TEST_CONFIG_API_KEY}` }
+        headers: { 'x-config-api-key': TEST_CONFIG_API_KEY }
       });
 
       expect(response.statusCode).toBe(200);
