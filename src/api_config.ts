@@ -159,18 +159,16 @@ export async function getWithMigration(
 }
 
 /**
- * Determine if the Authorization header carries a valid bearer token matching
+ * Determine if the x-config-api-key header carries a valid key matching
  * the expected secret.
- * Returns false when secret is undefined (CONFIG_API_KEY not configured).
+ * Returns false when expected is undefined (CONFIG_API_KEY not configured).
  */
-function isBearerAuth(
-  authHeader: string | undefined,
-  secret: string | undefined
+function hasConfigApiKey(
+  headerValue: string | undefined,
+  expected: string | undefined
 ): boolean {
-  if (!authHeader || !secret) return false;
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (!match) return false;
-  return match[1] === secret;
+  if (!headerValue || !expected) return false;
+  return headerValue === expected;
 }
 
 const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
@@ -343,7 +341,10 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
       try {
         const authenticated =
           !!opts.encryptionKey &&
-          isBearerAuth(request.headers.authorization, opts.configApiKey);
+          hasConfigApiKey(
+            request.headers['x-config-api-key'] as string | undefined,
+            opts.configApiKey
+          );
 
         const limit = request.query.limit || 20;
         const cursor = request.query.offset || 0;
@@ -451,7 +452,10 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
       try {
         const authenticated =
           !!opts.encryptionKey &&
-          isBearerAuth(request.headers.authorization, opts.configApiKey);
+          hasConfigApiKey(
+            request.headers['x-config-api-key'] as string | undefined,
+            opts.configApiKey
+          );
 
         const raw = await getWithMigration(redis, request.params.key);
         if (!raw) {
