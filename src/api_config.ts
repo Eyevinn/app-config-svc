@@ -98,6 +98,19 @@ export const SuccessResponse = Type.Object({
 });
 export type SuccessResponse = Static<typeof SuccessResponse>;
 
+export const MigrateSecureBody = Type.Object({
+  keys: Type.Optional(Type.Array(Type.String())), // omit → migrate all plaintext keys
+  dryRun: Type.Optional(Type.Boolean())
+});
+export type MigrateSecureBody = Static<typeof MigrateSecureBody>;
+
+export const MigrateSecureResult = Type.Object({
+  migrated: Type.Array(Type.String()),
+  skipped: Type.Array(Type.String()),
+  dryRun: Type.Boolean()
+});
+export type MigrateSecureResult = Static<typeof MigrateSecureResult>;
+
 const SECRET_MASK = '***';
 
 /**
@@ -471,6 +484,115 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
           .code(200)
           .header('Cache-Control', `max-age=${opts.defaultCacheAge}`)
           .send(result);
+      } catch (error) {
+        errorReply(reply as ErrorReply, error);
+      }
+    }
+  );
+
+  // POST /migrate/secure — bulk re-encrypt all (or specified) plaintext keys
+  fastify.post<{
+    Body: MigrateSecureBody;
+    Reply: MigrateSecureResult | ErrorResponse;
+  }>(
+    '/migrate/secure',
+    {
+      schema: {
+        description:
+          'Migrate plaintext parameters to encrypted envelopes in bulk',
+        body: MigrateSecureBody,
+        response: {
+          200: MigrateSecureResult,
+          400: ErrorResponse,
+          401: ErrorResponse,
+          500: ErrorResponse
+        }
+      }
+    },
+    async (request, reply) => {
+      try {
+        // Auth: require x-config-api-key header
+        if (
+          !hasConfigApiKey(
+            request.headers['x-config-api-key'] as string | undefined,
+            opts.configApiKey
+          )
+        ) {
+          return reply.code(401).send({ reason: 'Unauthorized' });
+        }
+
+        // Require encryption key to be configured
+        if (!opts.encryptionKey) {
+          return reply.code(400).send({
+            reason: 'PARAMETER_ENCRYPTION_KEY is not configured'
+          });
+        }
+
+        const { keys: requestedKeys, dryRun = false } = request.body;
+
+        // Determine which Redis keys to inspect
+        let redisKeys: string[];
+        if (requestedKeys && requestedKeys.length > 0) {
+          // Caller supplied explicit keys — map to prefixed form
+          redisKeys = requestedKeys.map((k) => KEY_PREFIX + k);
+        } else {
+          // SCAN for all keys under the prefix
+          let cursor = '0';
+          redisKeys = [];
+          do {
+            const [nextCursor, batch] = await redis.scan(
+              cursor,
+              'MATCH',
+              KEY_PREFIX + '*',
+              'COUNT',
+              100
+            );
+            redisKeys.push(...batch);
+            cursor = nextCursor;
+          } while (cursor !== '0');
+        }
+
+        const migrated: string[] = [];
+        const skipped: string[] = [];
+
+        for (const redisKey of redisKeys) {
+          const raw = await redis.get(redisKey);
+          if (raw === null) {
+            // Key not found — silently skip
+            continue;
+          }
+
+          const shortKey = redisKey.slice(KEY_PREFIX.length);
+
+          if (isSecretEnvelope(raw)) {
+            skipped.push(shortKey);
+          } else {
+            migrated.push(shortKey);
+            if (!dryRun) {
+              const { encrypted, iv, tag } = encrypt(
+                raw,
+                opts.encryptionKey as string
+              );
+              const envelope: SecretEnvelope = {
+                value: encrypted,
+                iv,
+                tag,
+                secret: true
+              };
+              await redis.set(redisKey, JSON.stringify(envelope));
+              console.info(
+                JSON.stringify({
+                  key: shortKey,
+                  secret: true,
+                  action: 'migrate'
+                }),
+                'Parameter migrated to encrypted envelope'
+              );
+            }
+          }
+        }
+
+        reply.code(200).send({ migrated, skipped, dryRun });
       } catch (error) {
         errorReply(reply as ErrorReply, error);
       }
