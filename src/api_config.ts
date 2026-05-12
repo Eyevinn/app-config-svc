@@ -89,7 +89,13 @@ export const ConfigObjectList = Type.Object({
   offset: Type.Number(),
   limit: Type.Number(),
   total: Type.Number(),
-  items: Type.Array(ConfigObject)
+  items: Type.Array(ConfigObject),
+  skippedKeys: Type.Optional(
+    Type.Number({
+      description:
+        'Number of non-String Valkey keys skipped (shared-store scenario)'
+    })
+  )
 });
 export type ConfigObjectList = Static<typeof ConfigObjectList>;
 
@@ -158,10 +164,41 @@ export async function getWithMigration(
   redis: Redis,
   key: string
 ): Promise<string | null> {
-  let value = await redis.get(KEY_PREFIX + key);
+  let value: string | null;
+  try {
+    value = await redis.get(KEY_PREFIX + key);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('WRONGTYPE')) {
+      console.warn(
+        JSON.stringify({
+          event: 'skippedNonStringKey',
+          key: KEY_PREFIX + key,
+          type: 'unknown'
+        })
+      );
+      return null;
+    }
+    throw err;
+  }
   if (value === null) {
     // Fallback: check for bare key (pre-migration data)
-    value = await redis.get(key);
+    try {
+      value = await redis.get(key);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('WRONGTYPE')) {
+        console.warn(
+          JSON.stringify({
+            event: 'skippedNonStringKey',
+            key,
+            type: 'unknown'
+          })
+        );
+        return null;
+      }
+      throw err;
+    }
     if (value !== null) {
       // Migrate in place: write prefixed, remove bare
       await redis.set(KEY_PREFIX + key, value);
@@ -389,10 +426,54 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
               : true)
         );
 
+        let skippedKeys = 0;
+
+        // Filter bare keys to String-only in one pipeline round-trip
+        const bareStringKeys: string[] = [];
+        if (bareKeys.length > 0) {
+          const barePipeline = redis.pipeline();
+          for (const bareKey of bareKeys) barePipeline.type(bareKey);
+          const bareTypeResults = (await barePipeline.exec()) ?? [];
+          bareKeys.forEach((bareKey, i) => {
+            const [err, type] = bareTypeResults[i] ?? [null, 'none'];
+            if (err || type !== 'string') {
+              if (!err) {
+                console.warn(
+                  JSON.stringify({
+                    event: 'skippedNonStringKey',
+                    key: bareKey,
+                    type
+                  })
+                );
+                skippedKeys++;
+              }
+              return;
+            }
+            bareStringKeys.push(bareKey);
+          });
+        }
+
         // Migrate bare keys in place and collect their values
         const bareItems: ConfigObject[] = [];
-        for (const bareKey of bareKeys) {
-          const value = await redis.get(bareKey);
+        for (const bareKey of bareStringKeys) {
+          let value: string | null;
+          try {
+            value = await redis.get(bareKey);
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.includes('WRONGTYPE')) {
+              console.warn(
+                JSON.stringify({
+                  event: 'skippedNonStringKey',
+                  key: bareKey,
+                  type: 'unknown-race'
+                })
+              );
+              skippedKeys++;
+              continue;
+            }
+            throw err;
+          }
           if (value !== null) {
             await redis.set(KEY_PREFIX + bareKey, value);
             await redis.del(bareKey);
@@ -404,10 +485,52 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
           }
         }
 
+        // Filter prefixed page keys to String-only in one pipeline round-trip
+        const prefixedStringKeys: string[] = [];
+        if (prefixedPageKeys.length > 0) {
+          const prefixedPipeline = redis.pipeline();
+          for (const k of prefixedPageKeys) prefixedPipeline.type(k);
+          const prefixedTypeResults = (await prefixedPipeline.exec()) ?? [];
+          prefixedPageKeys.forEach((k, i) => {
+            const [err, type] = prefixedTypeResults[i] ?? [null, 'none'];
+            if (err || type !== 'string') {
+              if (!err) {
+                console.warn(
+                  JSON.stringify({
+                    event: 'skippedNonStringKey',
+                    key: k,
+                    type
+                  })
+                );
+                skippedKeys++;
+              }
+              return;
+            }
+            prefixedStringKeys.push(k);
+          });
+        }
+
         // Collect values for the prefixed page keys
         const prefixedItems: ConfigObject[] = [];
-        for (const k of prefixedPageKeys) {
-          const value = await redis.get(k);
+        for (const k of prefixedStringKeys) {
+          let value: string | null;
+          try {
+            value = await redis.get(k);
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.includes('WRONGTYPE')) {
+              console.warn(
+                JSON.stringify({
+                  event: 'skippedNonStringKey',
+                  key: k,
+                  type: 'unknown-race'
+                })
+              );
+              skippedKeys++;
+              continue;
+            }
+            throw err;
+          }
           if (value) {
             const itemKey = k.slice(KEY_PREFIX.length);
             prefixedItems.push(
@@ -427,7 +550,8 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
           offset: parseInt(newCursor),
           limit: items.length > limit ? items.length : limit,
           total,
-          items
+          items,
+          ...(skippedKeys > 0 ? { skippedKeys } : {})
         });
       } catch (err) {
         errorReply(reply as ErrorReply, err);
