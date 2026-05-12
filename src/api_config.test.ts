@@ -6,12 +6,18 @@ import { randomBytes } from 'crypto';
 // Fixed test encryption key (256-bit, base64)
 const TEST_ENCRYPTION_KEY = randomBytes(32).toString('base64');
 
+const mockPipeline = {
+  type: jest.fn().mockReturnThis(),
+  exec: jest.fn().mockResolvedValue([])
+};
+
 const mockRedis = {
   set: jest.fn().mockResolvedValue('OK'),
   get: jest.fn().mockResolvedValue('value'),
   del: jest.fn().mockResolvedValue(1),
   scan: jest.fn().mockResolvedValue(['0', []]),
-  keys: jest.fn().mockResolvedValue([])
+  keys: jest.fn().mockResolvedValue([]),
+  pipeline: jest.fn().mockReturnValue(mockPipeline)
 };
 
 jest.mock('ioredis', () => {
@@ -44,6 +50,9 @@ describe('api_config key prefix isolation', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Default pipeline: one key, type=string (covers single-key listing tests)
+    mockPipeline.type.mockReturnThis();
+    mockPipeline.exec.mockResolvedValue([[null, 'string']]);
     server = makeServer();
   });
 
@@ -510,6 +519,45 @@ describe('api_config key prefix isolation', () => {
         (i: { key: string }) => i.key === 'secretkey'
       );
       expect(item.value).toBe('topsecret');
+    });
+
+    it('skips non-String keys (Hash/List/Set) and returns skippedKeys count', async () => {
+      // Seed: prefixedPageKeys has 2 string keys + 1 hash key
+      const stringKey1 = KEY_PREFIX + 'strkey1';
+      const stringKey2 = KEY_PREFIX + 'strkey2';
+      const hashKey = KEY_PREFIX + 'hashkey';
+
+      mockRedis.scan
+        .mockResolvedValueOnce(['0', [stringKey1, stringKey2, hashKey]]) // prefixed scan
+        .mockResolvedValueOnce(['0', []]); // all-keys scan (no bare keys)
+      mockRedis.keys.mockResolvedValue([stringKey1, stringKey2, hashKey]);
+
+      // Pipeline type check: string, string, hash
+      mockPipeline.exec.mockResolvedValueOnce([
+        [null, 'string'],
+        [null, 'string'],
+        [null, 'hash']
+      ]);
+
+      // redis.get called only for the 2 string keys
+      mockRedis.get
+        .mockResolvedValueOnce('value1')
+        .mockResolvedValueOnce('value2');
+
+      const response = await server.inject({
+        method: 'GET',
+        url: '/api/v1/config'
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.items).toHaveLength(2);
+      expect(body.items.map((i: { key: string }) => i.key)).toEqual(
+        expect.arrayContaining(['strkey1', 'strkey2'])
+      );
+      expect(body.skippedKeys).toBe(1);
+      // redis.get must NOT have been called for the hash key
+      expect(mockRedis.get).toHaveBeenCalledTimes(2);
     });
   });
 });
