@@ -3,6 +3,9 @@ import { KEY_PREFIX } from './api_config';
 import { encrypt } from './crypto';
 import { randomBytes } from 'crypto';
 
+// A key that decodes to 10 bytes (not a valid AES key length)
+const BAD_ENCRYPTION_KEY = randomBytes(10).toString('base64');
+
 // Fixed test encryption key (256-bit, base64)
 const TEST_ENCRYPTION_KEY = randomBytes(32).toString('base64');
 
@@ -42,6 +45,15 @@ function makeServerNoEncryption() {
     title: 'test',
     redisUrl: new URL('redis://localhost:6379')
     // encryptionKey and configApiKey intentionally omitted
+  });
+}
+
+function makeServerBadKey() {
+  return api({
+    title: 'test',
+    redisUrl: new URL('redis://localhost:6379'),
+    encryptionKey: BAD_ENCRYPTION_KEY,
+    configApiKey: TEST_CONFIG_API_KEY
   });
 }
 
@@ -819,5 +831,70 @@ describe('api_config without encryption keys (backward compatibility)', () => {
     expect(response.statusCode).toBe(200);
     const body = JSON.parse(response.body);
     expect(body.value).toBe('plainvalue');
+  });
+});
+
+describe('api_config with invalid encryption key (RangeError protection)', () => {
+  let server: ReturnType<typeof makeServerBadKey>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPipeline.type.mockReturnThis();
+    mockPipeline.exec.mockResolvedValue([[null, 'string']]);
+    server = makeServerBadKey();
+  });
+
+  it('POST /api/v1/config returns HTTP 400 with actionable reason when key is invalid', async () => {
+    mockRedis.set.mockResolvedValue('OK');
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/v1/config',
+      payload: { key: 'secretkey', value: 'topsecret', secret: true }
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = JSON.parse(response.body);
+    expect(body.reason).toMatch(/encryption key is invalid/);
+    expect(body.reason).toMatch(/setup-parameter-store/);
+  });
+
+  it('PUT /api/v1/config/:key returns HTTP 400 with actionable reason when key is invalid', async () => {
+    // Existing envelope that triggers the re-encrypt path
+    const envelope = JSON.stringify({
+      value: 'encryptedblob',
+      iv: Buffer.alloc(12).toString('base64'),
+      tag: Buffer.alloc(16).toString('base64'),
+      secret: true
+    });
+    mockRedis.get.mockResolvedValue(envelope);
+
+    const response = await server.inject({
+      method: 'PUT',
+      url: '/api/v1/config/secretkey',
+      payload: { value: 'newsecret' }
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = JSON.parse(response.body);
+    expect(body.reason).toMatch(/encryption key is invalid/);
+    expect(body.reason).toMatch(/setup-parameter-store/);
+  });
+
+  it('POST /api/v1/migrate/secure returns HTTP 400 with actionable reason when key is invalid', async () => {
+    mockRedis.scan.mockResolvedValueOnce(['0', [KEY_PREFIX + 'plainkey']]);
+    mockRedis.get.mockResolvedValueOnce('plainvalue');
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/v1/migrate/secure',
+      payload: {},
+      headers: { 'x-config-api-key': TEST_CONFIG_API_KEY }
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = JSON.parse(response.body);
+    expect(body.reason).toMatch(/encryption key is invalid/);
+    expect(body.reason).toMatch(/setup-parameter-store/);
   });
 });
