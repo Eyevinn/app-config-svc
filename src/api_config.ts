@@ -260,18 +260,18 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
                 'Encryption not configured: PARAMETER_ENCRYPTION_KEY is required for secret parameters'
             });
           }
-          let encrypted: string, iv: string, tag: string;
-          try {
-            ({ encrypted, iv, tag } = encrypt(value, opts.encryptionKey));
-          } catch (err) {
-            if (err instanceof RangeError) {
-              throw new InvalidInputError({
-                reason:
-                  'Parameter store encryption key is invalid or not configured correctly. Recreate the parameter store via setup-parameter-store.'
-              });
-            }
-            throw err;
+          const keyBuf = Buffer.from(opts.encryptionKey, 'base64');
+          if (
+            keyBuf.length !== 16 &&
+            keyBuf.length !== 24 &&
+            keyBuf.length !== 32
+          ) {
+            return reply.code(400).send({
+              reason:
+                'Parameter store encryption key is invalid or not configured correctly. Recreate the parameter store via setup-parameter-store.'
+            });
           }
+          const { encrypted, iv, tag } = encrypt(value, opts.encryptionKey);
           const envelope: SecretEnvelope = {
             value: encrypted,
             iv,
@@ -351,18 +351,21 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
                 'Encryption not configured: PARAMETER_ENCRYPTION_KEY is required for secret parameters'
             });
           }
-          let encrypted: string, iv: string, tag: string;
-          try {
-            ({ encrypted, iv, tag } = encrypt(value, opts.encryptionKey));
-          } catch (err) {
-            if (err instanceof RangeError) {
-              throw new InvalidInputError({
-                reason:
-                  'Parameter store encryption key is invalid or not configured correctly. Recreate the parameter store via setup-parameter-store.'
-              });
-            }
-            throw err;
+          const keyBuf = Buffer.from(opts.encryptionKey as string, 'base64');
+          if (
+            keyBuf.length !== 16 &&
+            keyBuf.length !== 24 &&
+            keyBuf.length !== 32
+          ) {
+            return reply.code(400).send({
+              reason:
+                'Parameter store encryption key is invalid or not configured correctly. Recreate the parameter store via setup-parameter-store.'
+            });
           }
+          const { encrypted, iv, tag } = encrypt(
+            value,
+            opts.encryptionKey as string
+          );
           const envelope: SecretEnvelope = {
             value: encrypted,
             iv,
@@ -715,21 +718,24 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
           } else {
             migrated.push(shortKey);
             if (!dryRun) {
-              let encrypted: string, iv: string, tag: string;
-              try {
-                ({ encrypted, iv, tag } = encrypt(
-                  raw,
-                  opts.encryptionKey as string
-                ));
-              } catch (err) {
-                if (err instanceof RangeError) {
-                  throw new InvalidInputError({
-                    reason:
-                      'Parameter store encryption key is invalid or not configured correctly. Recreate the parameter store via setup-parameter-store.'
-                  });
-                }
-                throw err;
+              const keyBuf = Buffer.from(
+                opts.encryptionKey as string,
+                'base64'
+              );
+              if (
+                keyBuf.length !== 16 &&
+                keyBuf.length !== 24 &&
+                keyBuf.length !== 32
+              ) {
+                return reply.code(400).send({
+                  reason:
+                    'Parameter store encryption key is invalid or not configured correctly. Recreate the parameter store via setup-parameter-store.'
+                });
               }
+              const { encrypted, iv, tag } = encrypt(
+                raw,
+                opts.encryptionKey as string
+              );
               const envelope: SecretEnvelope = {
                 value: encrypted,
                 iv,
