@@ -571,13 +571,16 @@ const apiConfig: FastifyPluginCallback<ApiConfigOptions> = (
         const total = prefixedKeys.length;
 
         const items = [...prefixedItems, ...bareItems];
-        reply.code(200).send({
-          offset: parseInt(newCursor),
-          limit: items.length > limit ? items.length : limit,
-          total,
-          items,
-          ...(skippedKeys > 0 ? { skippedKeys } : {})
-        });
+        reply
+          .code(200)
+          .header('Cache-Control', 'no-store')
+          .send({
+            offset: parseInt(newCursor),
+            limit: items.length > limit ? items.length : limit,
+            total,
+            items,
+            ...(skippedKeys > 0 ? { skippedKeys } : {})
+          });
       } catch (err) {
         errorReply(reply as ErrorReply, err);
       }
